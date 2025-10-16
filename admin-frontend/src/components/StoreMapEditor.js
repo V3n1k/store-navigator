@@ -35,6 +35,8 @@ function StoreMapEditor() {
     const [zoom, setZoom] = useState(1.0);
     const canvasRef = useRef(null);
     const { getAuthHeader } = useAuth();
+
+    // Отладочные логи
     console.log('🔵 StoreMapEditor component rendered');
     console.log('Loading:', loading);
     console.log('MapConfig:', mapConfig);
@@ -53,35 +55,6 @@ function StoreMapEditor() {
     };
 
     const [configForm, setConfigForm] = useState({ ...defaultConfig });
-    useEffect(() => {
-        console.log('🟡 useEffect triggered');
-
-        const loadData = async () => {
-            console.log('🟢 loadData started');
-            try {
-                setLoading(true);
-
-                // Простой тест - загрузи только один эндпоинт
-                const elementsRes = await axios.get(
-                    `http://localhost:8080/api/admin/stores/${storeId}/map-elements`,
-                    { headers: getAuthHeader() }
-                );
-
-                console.log('✅ Elements response:', elementsRes.data);
-                setElements(elementsRes.data.elements || []);
-
-            } catch (error) {
-                console.error('❌ Load error:', error);
-                console.error('❌ Error response:', error.response?.data);
-                setError('Failed to load: ' + (error.response?.data?.error || error.message));
-            } finally {
-                console.log('🔴 Setting loading to false');
-                setLoading(false);
-            }
-        };
-
-        loadData();
-    }, [storeId]);
 
     const elementTypes = useMemo(() => [
         { value: 'sector', label: 'Сектор', color: '#4CAF50', icon: <SquareFoot />, defaultWidth: 5, defaultHeight: 3 },
@@ -93,31 +66,34 @@ function StoreMapEditor() {
         { value: 'passage', label: 'Проход', color: '#9E9E9E', icon: <DoorFront />, defaultWidth: 2, defaultHeight: 0.2 }
     ], []);
 
-    // Функции для преобразования координат
-    const metersToPixels = useCallback((meters) => {
-        if (!mapConfig) return meters;
-        return meters * mapConfig.scale;
+    // Функции для преобразования координат с fallback значениями
+    const metersToPixels = useCallback((meters, config = mapConfig) => {
+        const effectiveConfig = config || defaultConfig;
+        const result = meters * effectiveConfig.scale;
+        console.log(`📏 metersToPixels: ${meters}m -> ${result}px (scale: ${effectiveConfig.scale})`);
+        return result;
     }, [mapConfig]);
 
-    const pixelsToMeters = useCallback((pixels) => {
-        if (!mapConfig) return pixels;
-        return pixels / mapConfig.scale;
+    const pixelsToMeters = useCallback((pixels, config = mapConfig) => {
+        const effectiveConfig = config || defaultConfig;
+        return pixels / effectiveConfig.scale;
     }, [mapConfig]);
 
     const applyZoom = useCallback((value) => {
         return value * zoom;
     }, [zoom]);
 
-    // Загрузка данных
+    // Загрузка данных с улучшенной обработкой ошибок
     const fetchMapData = useCallback(async () => {
-        console.log('🚨 fetchMapData STARTED');
         try {
+            console.log('🚨 fetchMapData STARTED');
             setLoading(true);
             setError('');
 
-            console.log('🔄 Starting data fetch...');
+            console.log('🔄 Starting data fetch for store:', storeId);
+            console.log('Auth header:', getAuthHeader());
 
-            // Делаем запросы последовательно вместо Promise.all
+            // Загружаем данные последовательно для лучшей отладки
             try {
                 const elementsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/map-elements`, {
                     headers: getAuthHeader()
@@ -125,7 +101,6 @@ function StoreMapEditor() {
                 setElements(elementsRes.data.elements || []);
                 console.log('✅ Elements loaded:', elementsRes.data.elements?.length);
             } catch (err) {
-
                 console.error('❌ Elements error:', err);
                 setElements([]);
             }
@@ -161,114 +136,157 @@ function StoreMapEditor() {
                 console.log('✅ Config loaded:', configRes.data);
             } catch (err) {
                 console.error('❌ Config error:', err);
-                // Устанавливаем конфиг по умолчанию
+                console.log('🔄 Using default config');
                 setMapConfig(defaultConfig);
                 setConfigForm(defaultConfig);
-                console.log('🔄 Using default config');
             }
 
+            console.log('📊 Final state:', {
+                elements: elements.length,
+                sectors: sectors.length,
+                walls: walls.length,
+                mapConfig: mapConfig ? 'loaded' : 'default'
+            });
+
         } catch (error) {
-            console.error('💥 fetchMapData ERROR:', error);
             console.error('💥 General fetch error:', error);
-            setError('Ошибка загрузки данных карты');
+            setError('Ошибка загрузки данных карты: ' + error.message);
         } finally {
             console.log('🏁 fetchMapData COMPLETED');
             setLoading(false);
-            console.log('🏁 Data loading completed');
         }
     }, [storeId, getAuthHeader]);
 
-    // Отрисовка карты
+    useEffect(() => {
+        console.log('🟡 useEffect triggered, calling fetchMapData');
+        fetchMapData();
+    }, [fetchMapData]);
+
+    // Отслеживание изменений состояния
+    useEffect(() => {
+        console.log('🔄 State updated:', {
+            loading,
+            elementsCount: elements.length,
+            sectorsCount: sectors.length,
+            wallsCount: walls.length,
+            hasMapConfig: !!mapConfig
+        });
+    }, [loading, elements, sectors, walls, mapConfig]);
+
+    // Отрисовка карты с улучшенной обработкой
     const drawCanvas = useCallback(() => {
         const canvas = canvasRef.current;
-        if (!canvas || !mapConfig) return;
+        if (!canvas) {
+            console.log('Canvas not found');
+            return;
+        }
 
         const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!ctx) {
+            console.log('Canvas context not found');
+            return;
+        }
 
-        const scaledWidth = applyZoom(mapConfig.map_width);
-        const scaledHeight = applyZoom(mapConfig.map_height);
+        // Используем эффективный конфиг (загруженный или по умолчанию)
+        const effectiveConfig = mapConfig || defaultConfig;
+        const width = applyZoom(effectiveConfig.map_width);
+        const height = applyZoom(effectiveConfig.map_height);
 
-        canvas.width = scaledWidth;
-        canvas.height = scaledHeight;
+        console.log(`🎨 Drawing canvas: ${width}x${height}, zoom: ${zoom}`);
+        console.log(`🎨 Elements: ${elements.length}, Sectors: ${sectors.length}, Walls: ${walls.length}`);
 
-        // Рисуем сетку в метрах
+        // Устанавливаем размеры canvas
+        canvas.width = width;
+        canvas.height = height;
+
+        // Очистка canvas
+        ctx.clearRect(0, 0, width, height);
+
+        // Рисуем фон
+        ctx.fillStyle = '#fafafa';
+        ctx.fillRect(0, 0, width, height);
+
+        // Рисуем сетку
+        const gridSize = applyZoom(effectiveConfig.scale);
         ctx.strokeStyle = '#e0e0e0';
         ctx.lineWidth = 1;
-        const meterSize = applyZoom(mapConfig.scale);
 
-        for (let x = 0; x <= scaledWidth; x += meterSize) {
+        for (let x = 0; x <= width; x += gridSize) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
-            ctx.lineTo(x, scaledHeight);
+            ctx.lineTo(x, height);
             ctx.stroke();
         }
-        for (let y = 0; y <= scaledHeight; y += meterSize) {
+        for (let y = 0; y <= height; y += gridSize) {
             ctx.beginPath();
             ctx.moveTo(0, y);
-            ctx.lineTo(scaledWidth, y);
+            ctx.lineTo(width, y);
             ctx.stroke();
         }
 
-        // Подписи осей (метры)
-        ctx.fillStyle = '#666';
-        ctx.font = '10px Arial';
-        for (let x = 0; x <= mapConfig.real_width; x++) {
-            const pixelX = applyZoom(x * mapConfig.scale);
-            ctx.fillText(`${x}m`, pixelX + 2, 12);
-        }
-        for (let y = 0; y <= mapConfig.real_height; y++) {
-            const pixelY = applyZoom(y * mapConfig.scale);
-            ctx.fillText(`${y}m`, 2, pixelY - 2);
-        }
+        // Рисуем границы
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, width, height);
 
-        // Рисуем стены (линии)
-        walls.forEach(wall => {
-            const startX = applyZoom(metersToPixels(wall.startX));
-            const startY = applyZoom(metersToPixels(wall.startY));
-            const endX = applyZoom(metersToPixels(wall.endX));
-            const endY = applyZoom(metersToPixels(wall.endY));
+        // ТЕСТОВАЯ ОТРИСОВКА - красный прямоугольник для проверки
+        ctx.fillStyle = 'red';
+        ctx.fillRect(50, 50, 100, 60);
+        ctx.fillStyle = 'blue';
+        ctx.font = '14px Arial';
+        ctx.fillText('Canvas is working!', 60, 80);
+
+        // Рисуем стены
+        console.log(`🎨 Drawing ${walls.length} walls`);
+        walls.forEach((wall, index) => {
+            const startX = applyZoom(metersToPixels(wall.startX || 0, effectiveConfig));
+            const startY = applyZoom(metersToPixels(wall.startY || 0, effectiveConfig));
+            const endX = applyZoom(metersToPixels(wall.endX || 0, effectiveConfig));
+            const endY = applyZoom(metersToPixels(wall.endY || 0, effectiveConfig));
+
+            console.log(`🎨 Wall ${index}: (${startX},${startY}) to (${endX},${endY})`);
 
             ctx.strokeStyle = '#795548';
-            ctx.lineWidth = applyZoom(5); // Толщина стены в пикселях
+            ctx.lineWidth = applyZoom(8);
             ctx.beginPath();
             ctx.moveTo(startX, startY);
             ctx.lineTo(endX, endY);
             ctx.stroke();
         });
 
-        // Рисуем обычные сектора (из модели Sector)
-        sectors.forEach(sector => {
-            const x = applyZoom(metersToPixels(sector.positionX || 0));
-            const y = applyZoom(metersToPixels(sector.positionY || 0));
-            const width = applyZoom(metersToPixels(sector.width || 5));
-            const height = applyZoom(metersToPixels(sector.height || 3));
+        // Рисуем сектора
+        console.log(`🎨 Drawing ${sectors.length} sectors`);
+        sectors.forEach((sector, index) => {
+            const x = applyZoom(metersToPixels(sector.positionX || 0, effectiveConfig));
+            const y = applyZoom(metersToPixels(sector.positionY || 0, effectiveConfig));
+            const sectorWidth = applyZoom(metersToPixels(sector.width || 5, effectiveConfig));
+            const sectorHeight = applyZoom(metersToPixels(sector.height || 3, effectiveConfig));
+
+            console.log(`🎨 Sector ${index}: (${x},${y}) ${sectorWidth}x${sectorHeight}`);
 
             ctx.fillStyle = 'rgba(76, 175, 80, 0.3)';
             ctx.strokeStyle = selectedElement?.id === sector.id ? '#FF0000' : '#4CAF50';
             ctx.lineWidth = selectedElement?.id === sector.id ? 3 : 2;
 
-            ctx.fillRect(x, y, width, height);
-            ctx.strokeRect(x, y, width, height);
+            ctx.fillRect(x, y, sectorWidth, sectorHeight);
+            ctx.strokeRect(x, y, sectorWidth, sectorHeight);
 
             // Текст названия
             ctx.fillStyle = '#000000';
-            ctx.font = `${applyZoom(12)}px Arial`;
-            ctx.fillText(sector.name, x + 5, y + 15);
-
-            // Количество товаров
-            if (sector.products && sector.products.length > 0) {
-                ctx.fillText(`Товаров: ${sector.products.length}`, x + 5, y + 30);
-            }
+            ctx.font = '12px Arial';
+            ctx.fillText(sector.name || 'Без названия', x + 5, y + 15);
         });
 
         // Рисуем элементы карты
-        elements.forEach(element => {
+        console.log(`🎨 Drawing ${elements.length} map elements`);
+        elements.forEach((element, index) => {
             const typeConfig = elementTypes.find(t => t.value === element.type);
-            const x = applyZoom(metersToPixels(element.positionX));
-            const y = applyZoom(metersToPixels(element.positionY));
-            const width = applyZoom(metersToPixels(element.width));
-            const height = applyZoom(metersToPixels(element.height));
+            const x = applyZoom(metersToPixels(element.positionX || 0, effectiveConfig));
+            const y = applyZoom(metersToPixels(element.positionY || 0, effectiveConfig));
+            const elementWidth = applyZoom(metersToPixels(element.width || 1, effectiveConfig));
+            const elementHeight = applyZoom(metersToPixels(element.height || 1, effectiveConfig));
+
+            console.log(`🎨 Element ${index} (${element.type}): (${x},${y}) ${elementWidth}x${elementHeight}`);
 
             ctx.fillStyle = element.color || typeConfig?.color || '#4CAF50';
             ctx.strokeStyle = selectedElement?.id === element.id ? '#FF0000' : '#000000';
@@ -276,76 +294,70 @@ function StoreMapEditor() {
 
             switch (element.type) {
                 case 'sector':
-                    ctx.fillRect(x, y, width, height);
-                    ctx.strokeRect(x, y, width, height);
+                    ctx.fillRect(x, y, elementWidth, elementHeight);
+                    ctx.strokeRect(x, y, elementWidth, elementHeight);
                     ctx.fillStyle = '#000000';
-                    ctx.font = `${applyZoom(12)}px Arial`;
-                    ctx.fillText(element.name, x + 5, y + 15);
+                    ctx.font = '12px Arial';
+                    ctx.fillText(element.name || 'Сектор', x + 5, y + 15);
                     break;
 
                 case 'wall':
-                    // Стена как прямоугольник
-                    ctx.fillRect(x, y, width, height);
-                    ctx.strokeRect(x, y, width, height);
+                    ctx.fillRect(x, y, elementWidth, elementHeight);
+                    ctx.strokeRect(x, y, elementWidth, elementHeight);
                     break;
 
                 case 'cashier':
-                    // Касса - прямоугольник с иконкой
-                    ctx.fillRect(x, y, width, height);
-                    ctx.strokeRect(x, y, width, height);
+                    ctx.fillRect(x, y, elementWidth, elementHeight);
+                    ctx.strokeRect(x, y, elementWidth, elementHeight);
                     ctx.fillStyle = '#000000';
-                    ctx.font = `${applyZoom(10)}px Arial`;
+                    ctx.font = '10px Arial';
                     ctx.fillText('💰 КАССА', x + 5, y + 15);
                     break;
 
                 case 'beacon':
-                    // Маячок - синий круг
+                    const radius = applyZoom(8);
                     ctx.beginPath();
-                    const radius = applyZoom(metersToPixels(0.3)); // Фиксированный радиус
                     ctx.arc(x, y, radius, 0, 2 * Math.PI);
                     ctx.fill();
                     ctx.stroke();
                     ctx.fillStyle = '#FFFFFF';
-                    ctx.font = `${applyZoom(8)}px Arial`;
+                    ctx.font = '8px Arial';
                     ctx.textAlign = 'center';
                     ctx.fillText('BLE', x, y + 3);
                     ctx.textAlign = 'left';
                     break;
 
                 case 'entrance':
-                    // Вход - зеленая линия
                     ctx.strokeStyle = '#8BC34A';
                     ctx.lineWidth = applyZoom(8);
                     ctx.beginPath();
                     ctx.moveTo(x, y);
-                    ctx.lineTo(x + width, y);
+                    ctx.lineTo(x + elementWidth, y);
                     ctx.stroke();
                     ctx.fillStyle = '#000000';
-                    ctx.font = `${applyZoom(10)}px Arial`;
+                    ctx.font = '10px Arial';
                     ctx.fillText('🚪 ВХОД', x, y - 5);
                     break;
 
                 case 'exit':
-                    // Выход - красная линия
                     ctx.strokeStyle = '#F44336';
                     ctx.lineWidth = applyZoom(8);
                     ctx.beginPath();
                     ctx.moveTo(x, y);
-                    ctx.lineTo(x + width, y);
+                    ctx.lineTo(x + elementWidth, y);
                     ctx.stroke();
                     ctx.fillStyle = '#000000';
-                    ctx.font = `${applyZoom(10)}px Arial`;
+                    ctx.font = '10px Arial';
                     ctx.fillText('🚪 ВЫХОД', x, y - 5);
                     break;
 
                 case 'passage':
-                    // Проход - серая пунктирная линия
                     ctx.strokeStyle = '#9E9E9E';
                     ctx.lineWidth = applyZoom(4);
                     ctx.setLineDash([5, 5]);
                     ctx.beginPath();
                     ctx.moveTo(x, y);
-                    ctx.lineTo(x + width, y);
+                    ctx.lineTo(x + elementWidth, y);
                     ctx.stroke();
                     ctx.setLineDash([]);
                     break;
@@ -356,10 +368,10 @@ function StoreMapEditor() {
 
         // Рисуем временную стену при рисовании
         if (drawingWall) {
-            const startX = applyZoom(metersToPixels(drawingWall.startX));
-            const startY = applyZoom(metersToPixels(drawingWall.startY));
-            const currentX = applyZoom(metersToPixels(drawingWall.currentX));
-            const currentY = applyZoom(metersToPixels(drawingWall.currentY));
+            const startX = applyZoom(metersToPixels(drawingWall.startX, effectiveConfig));
+            const startY = applyZoom(metersToPixels(drawingWall.startY, effectiveConfig));
+            const currentX = applyZoom(metersToPixels(drawingWall.currentX, effectiveConfig));
+            const currentY = applyZoom(metersToPixels(drawingWall.currentY, effectiveConfig));
 
             ctx.strokeStyle = '#795548';
             ctx.lineWidth = applyZoom(5);
@@ -368,14 +380,19 @@ function StoreMapEditor() {
             ctx.lineTo(currentX, currentY);
             ctx.stroke();
         }
-    }, [elements, walls, sectors, selectedElement, drawingWall, elementTypes, mapConfig, metersToPixels, applyZoom]);
+
+        console.log('🎨 Canvas drawing completed');
+    }, [elements, walls, sectors, selectedElement, drawingWall, elementTypes, mapConfig, metersToPixels, applyZoom, zoom]);
 
     useEffect(() => {
+        console.log('🎨 useEffect drawCanvas triggered');
         drawCanvas();
     }, [drawCanvas]);
 
     const getMousePosInMeters = (e) => {
         const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
+
         const rect = canvas.getBoundingClientRect();
         const pixelX = (e.clientX - rect.left) / zoom;
         const pixelY = (e.clientY - rect.top) / zoom;
@@ -387,18 +404,17 @@ function StoreMapEditor() {
     };
 
     const handleCanvasMouseDown = (e) => {
-        if (!mapConfig) return;
-
+        console.log('Canvas mouse down');
         const pos = getMousePosInMeters(e);
+        console.log(`Mouse position: ${pos.x}, ${pos.y} meters`);
 
         if (currentTool === 'select') {
-            // Поиск элемента под курсором
             const allElements = [...elements, ...sectors.map(s => ({ ...s, isSector: true }))];
             const clickedElement = allElements.find(item => {
-                const itemEndX = item.positionX + (item.width || 0);
-                const itemEndY = item.positionY + (item.height || 0);
-                return pos.x >= item.positionX && pos.x <= itemEndX &&
-                    pos.y >= item.positionY && pos.y <= itemEndY;
+                const itemEndX = (item.positionX || 0) + (item.width || 0);
+                const itemEndY = (item.positionY || 0) + (item.height || 0);
+                return pos.x >= (item.positionX || 0) && pos.x <= itemEndX &&
+                    pos.y >= (item.positionY || 0) && pos.y <= itemEndY;
             });
 
             setSelectedElement(clickedElement || null);
@@ -413,7 +429,6 @@ function StoreMapEditor() {
                 currentY: pos.y
             });
         } else {
-            // Создание нового элемента
             const typeConfig = elementTypes.find(t => t.value === currentTool);
             const newElement = {
                 type: currentTool,
@@ -425,19 +440,17 @@ function StoreMapEditor() {
                 color: typeConfig?.color || '#4CAF50'
             };
 
+            console.log('Creating new element:', newElement);
             createElement(newElement);
         }
     };
 
     const handleCanvasMouseMove = (e) => {
-        if (!mapConfig) return;
-
         const pos = getMousePosInMeters(e);
 
         if (isDragging && selectedElement) {
             // Перемещение элемента
             if (selectedElement.isSector) {
-                // Это сектор из модели Sector
                 const updatedSectors = sectors.map(sector =>
                     sector.id === selectedElement.id
                         ? { ...sector, positionX: pos.x, positionY: pos.y }
@@ -445,7 +458,6 @@ function StoreMapEditor() {
                 );
                 setSectors(updatedSectors);
             } else {
-                // Это элемент карты
                 const updatedElements = elements.map(el =>
                     el.id === selectedElement.id
                         ? { ...el, positionX: pos.x, positionY: pos.y }
@@ -454,7 +466,6 @@ function StoreMapEditor() {
                 setElements(updatedElements);
             }
         } else if (drawingWall) {
-            // Обновление временной стены
             setDrawingWall({
                 ...drawingWall,
                 currentX: pos.x,
@@ -465,7 +476,6 @@ function StoreMapEditor() {
 
     const handleCanvasMouseUp = (e) => {
         if (isDragging && selectedElement) {
-            // Сохраняем новую позицию элемента
             if (selectedElement.isSector) {
                 updateSector(selectedElement.id, {
                     positionX: selectedElement.positionX,
@@ -478,7 +488,6 @@ function StoreMapEditor() {
                 });
             }
         } else if (drawingWall) {
-            // Сохраняем новую стену
             const pos = getMousePosInMeters(e);
             if (Math.abs(drawingWall.startX - pos.x) > 0.1 || Math.abs(drawingWall.startY - pos.y) > 0.1) {
                 createWall({
@@ -495,13 +504,6 @@ function StoreMapEditor() {
         setDrawingWall(null);
     };
 
-
-
-
-
-
-
-
     const createElement = async (elementData) => {
         try {
             const response = await axios.post(
@@ -513,7 +515,7 @@ function StoreMapEditor() {
             setSuccess('Элемент создан');
         } catch (error) {
             console.error('Error creating element:', error);
-            setError('Ошибка создания элемента');
+            setError('Ошибка создания элемента: ' + error.message);
         }
     };
 
@@ -747,6 +749,26 @@ function StoreMapEditor() {
                                     </Paper>
                                 </Box>
                             )}
+
+                            <Box sx={{ mb: 2 }}>
+                                <Typography variant="subtitle2" gutterBottom>
+                                    Статистика
+                                </Typography>
+                                <Paper sx={{ p: 2 }}>
+                                    <Typography variant="body2">
+                                        Секторов: {sectors.length}
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        Элементов: {elements.length}
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        Стен: {walls.length}
+                                    </Typography>
+                                    <Typography variant="body2">
+                                        Конфиг: {mapConfig ? 'Загружен' : 'По умолчанию'}
+                                    </Typography>
+                                </Paper>
+                            </Box>
                         </CardContent>
                     </Card>
                 </Grid>
@@ -777,7 +799,9 @@ function StoreMapEditor() {
                                     ref={canvasRef}
                                     style={{
                                         cursor: currentTool === 'select' ? 'default' : 'crosshair',
-                                        background: '#fafafa'
+                                        background: '#fafafa',
+                                        width: '100%',
+                                        height: '100%'
                                     }}
                                     onMouseDown={handleCanvasMouseDown}
                                     onMouseMove={handleCanvasMouseMove}
