@@ -54,14 +54,34 @@ function StoreMapEditor() {
 
     const [configForm, setConfigForm] = useState({ ...defaultConfig });
     useEffect(() => {
-        console.log('🔄 State updated:', {
-            loading,
-            elementsCount: elements.length,
-            sectorsCount: sectors.length,
-            wallsCount: walls.length,
-            hasMapConfig: !!mapConfig
-        });
-    }, [loading, elements, sectors, walls, mapConfig]);
+        console.log('🟡 useEffect triggered');
+
+        const loadData = async () => {
+            console.log('🟢 loadData started');
+            try {
+                setLoading(true);
+
+                // Простой тест - загрузи только один эндпоинт
+                const elementsRes = await axios.get(
+                    `http://localhost:8080/api/admin/stores/${storeId}/map-elements`,
+                    { headers: getAuthHeader() }
+                );
+
+                console.log('✅ Elements response:', elementsRes.data);
+                setElements(elementsRes.data.elements || []);
+
+            } catch (error) {
+                console.error('❌ Load error:', error);
+                console.error('❌ Error response:', error.response?.data);
+                setError('Failed to load: ' + (error.response?.data?.error || error.message));
+            } finally {
+                console.log('🔴 Setting loading to false');
+                setLoading(false);
+            }
+        };
+
+        loadData();
+    }, [storeId]);
 
     const elementTypes = useMemo(() => [
         { value: 'sector', label: 'Сектор', color: '#4CAF50', icon: <SquareFoot />, defaultWidth: 5, defaultHeight: 3 },
@@ -90,6 +110,7 @@ function StoreMapEditor() {
 
     // Загрузка данных
     const fetchMapData = useCallback(async () => {
+        console.log('🚨 fetchMapData STARTED');
         try {
             setLoading(true);
             setError('');
@@ -104,6 +125,7 @@ function StoreMapEditor() {
                 setElements(elementsRes.data.elements || []);
                 console.log('✅ Elements loaded:', elementsRes.data.elements?.length);
             } catch (err) {
+
                 console.error('❌ Elements error:', err);
                 setElements([]);
             }
@@ -146,9 +168,11 @@ function StoreMapEditor() {
             }
 
         } catch (error) {
+            console.error('💥 fetchMapData ERROR:', error);
             console.error('💥 General fetch error:', error);
             setError('Ошибка загрузки данных карты');
         } finally {
+            console.log('🏁 fetchMapData COMPLETED');
             setLoading(false);
             console.log('🏁 Data loading completed');
         }
