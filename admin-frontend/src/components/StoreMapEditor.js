@@ -35,6 +35,12 @@ function StoreMapEditor() {
     const [zoom, setZoom] = useState(1.0);
     const canvasRef = useRef(null);
     const { getAuthHeader } = useAuth();
+    console.log('🔵 StoreMapEditor component rendered');
+    console.log('Loading:', loading);
+    console.log('MapConfig:', mapConfig);
+    console.log('Elements count:', elements.length);
+    console.log('Sectors count:', sectors.length);
+    console.log('Walls count:', walls.length);
 
     const defaultConfig = {
         real_width: 50.0,
@@ -47,6 +53,15 @@ function StoreMapEditor() {
     };
 
     const [configForm, setConfigForm] = useState({ ...defaultConfig });
+    useEffect(() => {
+        console.log('🔄 State updated:', {
+            loading,
+            elementsCount: elements.length,
+            sectorsCount: sectors.length,
+            wallsCount: walls.length,
+            hasMapConfig: !!mapConfig
+        });
+    }, [loading, elements, sectors, walls, mapConfig]);
 
     const elementTypes = useMemo(() => [
         { value: 'sector', label: 'Сектор', color: '#4CAF50', icon: <SquareFoot />, defaultWidth: 5, defaultHeight: 3 },
@@ -75,69 +90,69 @@ function StoreMapEditor() {
 
     // Загрузка данных
     const fetchMapData = useCallback(async () => {
-    try {
-        setLoading(true);
-        setError('');
-        
-        console.log('🔄 Starting data fetch...');
-        
-        // Делаем запросы последовательно вместо Promise.all
         try {
-            const elementsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/map-elements`, {
-                headers: getAuthHeader()
-            });
-            setElements(elementsRes.data.elements || []);
-            console.log('✅ Elements loaded:', elementsRes.data.elements?.length);
-        } catch (err) {
-            console.error('❌ Elements error:', err);
-            setElements([]);
-        }
+            setLoading(true);
+            setError('');
 
-        try {
-            const wallsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/walls`, {
-                headers: getAuthHeader()
-            });
-            setWalls(wallsRes.data.walls || []);
-            console.log('✅ Walls loaded:', wallsRes.data.walls?.length);
-        } catch (err) {
-            console.error('❌ Walls error:', err);
-            setWalls([]);
-        }
+            console.log('🔄 Starting data fetch...');
 
-        try {
-            const sectorsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/sectors`, {
-                headers: getAuthHeader()
-            });
-            setSectors(sectorsRes.data.sectors || []);
-            console.log('✅ Sectors loaded:', sectorsRes.data.sectors?.length);
-        } catch (err) {
-            console.error('❌ Sectors error:', err);
-            setSectors([]);
-        }
+            // Делаем запросы последовательно вместо Promise.all
+            try {
+                const elementsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/map-elements`, {
+                    headers: getAuthHeader()
+                });
+                setElements(elementsRes.data.elements || []);
+                console.log('✅ Elements loaded:', elementsRes.data.elements?.length);
+            } catch (err) {
+                console.error('❌ Elements error:', err);
+                setElements([]);
+            }
 
-        try {
-            const configRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/map-config`, {
-                headers: getAuthHeader()
-            });
-            setMapConfig(configRes.data);
-            setConfigForm(configRes.data);
-            console.log('✅ Config loaded:', configRes.data);
-        } catch (err) {
-            console.error('❌ Config error:', err);
-            // Устанавливаем конфиг по умолчанию
-            setMapConfig(defaultConfig);
-            setConfigForm(defaultConfig);
-            console.log('🔄 Using default config');
-        }
+            try {
+                const wallsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/walls`, {
+                    headers: getAuthHeader()
+                });
+                setWalls(wallsRes.data.walls || []);
+                console.log('✅ Walls loaded:', wallsRes.data.walls?.length);
+            } catch (err) {
+                console.error('❌ Walls error:', err);
+                setWalls([]);
+            }
 
-    } catch (error) {
-        console.error('💥 General fetch error:', error);
-        setError('Ошибка загрузки данных карты');
-    } finally {
-        setLoading(false);
-        console.log('🏁 Data loading completed');
-    }
-}, [storeId, getAuthHeader]);
+            try {
+                const sectorsRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/sectors`, {
+                    headers: getAuthHeader()
+                });
+                setSectors(sectorsRes.data.sectors || []);
+                console.log('✅ Sectors loaded:', sectorsRes.data.sectors?.length);
+            } catch (err) {
+                console.error('❌ Sectors error:', err);
+                setSectors([]);
+            }
+
+            try {
+                const configRes = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/map-config`, {
+                    headers: getAuthHeader()
+                });
+                setMapConfig(configRes.data);
+                setConfigForm(configRes.data);
+                console.log('✅ Config loaded:', configRes.data);
+            } catch (err) {
+                console.error('❌ Config error:', err);
+                // Устанавливаем конфиг по умолчанию
+                setMapConfig(defaultConfig);
+                setConfigForm(defaultConfig);
+                console.log('🔄 Using default config');
+            }
+
+        } catch (error) {
+            console.error('💥 General fetch error:', error);
+            setError('Ошибка загрузки данных карты');
+        } finally {
+            setLoading(false);
+            console.log('🏁 Data loading completed');
+        }
+    }, [storeId, getAuthHeader]);
 
     // Отрисовка карты
     const drawCanvas = useCallback(() => {

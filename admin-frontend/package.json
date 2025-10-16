@@ -22,7 +22,9 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "prestart": "git pull origin main",
+    "predev": "git pull origin main"
   },
   "eslintConfig": {
     "extends": [
