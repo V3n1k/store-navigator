@@ -20,7 +20,7 @@ import {
 import { Add, Edit, Delete, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import axios from 'axios';
+import api from '../api/axiosInstance';
 
 function StoreSectors() {
     const { storeId } = useParams();
@@ -57,9 +57,7 @@ function StoreSectors() {
 
     const fetchSectors = async () => {
         try {
-            const response = await axios.get(`http://localhost:8080/api/admin/stores/${storeId}/sectors`, {
-                headers: getAuthHeader()
-            });
+            const response = await api.get(`/api/admin/stores/${storeId}/sectors`);
             setSectors(response.data.sectors || []);
         } catch (error) {
             setError('Ошибка загрузки секторов');
@@ -113,19 +111,15 @@ function StoreSectors() {
         e.preventDefault();
         try {
             if (editingSector) {
-                await axios.put(`http://localhost:8080/api/admin/sectors/${editingSector.id}`, {
+                await api.put(`/api/admin/sectors/${editingSector.id}`, {
                     ...sectorForm,
                     storeId: parseInt(storeId)
-                }, {
-                    headers: getAuthHeader()
                 });
                 setSuccess('Сектор успешно обновлен');
             } else {
-                await axios.post(`http://localhost:8080/api/admin/stores/${storeId}/sectors`, {
+                await api.post(`/api/admin/stores/${storeId}/sectors`, {
                     ...sectorForm,
                     storeId: parseInt(storeId)
-                }, {
-                    headers: getAuthHeader()
                 });
                 setSuccess('Сектор успешно создан');
             }
@@ -140,14 +134,10 @@ function StoreSectors() {
         e.preventDefault();
         try {
             if (editingProduct) {
-                await axios.put(`http://localhost:8080/api/admin/products/${editingProduct.id}`, productForm, {
-                    headers: getAuthHeader()
-                });
+                await api.put(`/api/admin/products/${editingProduct.id}`, productForm);
                 setSuccess('Товар успешно обновлен');
             } else {
-                await axios.post(`http://localhost:8080/api/admin/sectors/${selectedSector.id}/products`, productForm, {
-                    headers: getAuthHeader()
-                });
+                await api.post(`/api/admin/sectors/${selectedSector.id}/products`, productForm);
                 setSuccess('Товар успешно создан');
             }
             handleCloseDialogs();
@@ -160,9 +150,7 @@ function StoreSectors() {
     const handleDeleteSector = async (sectorId) => {
         if (window.confirm('Удалить сектор и все товары в нем?')) {
             try {
-                await axios.delete(`http://localhost:8080/api/admin/sectors/${sectorId}`, {
-                    headers: getAuthHeader()
-                });
+                await api.delete(`/api/admin/sectors/${sectorId}`);
                 setSuccess('Сектор удален');
                 fetchSectors();
             } catch (error) {
@@ -174,9 +162,7 @@ function StoreSectors() {
     const handleDeleteProduct = async (productId) => {
         if (window.confirm('Удалить товар?')) {
             try {
-                await axios.delete(`http://localhost:8080/api/admin/products/${productId}`, {
-                    headers: getAuthHeader()
-                });
+                await api.delete(`/api/admin/products/${productId}`);
                 setSuccess('Товар удален');
                 fetchSectors();
             } catch (error) {
